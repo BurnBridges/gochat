@@ -3,6 +3,7 @@ import "./App.css";
 import io from "socket.io-client";
 import { messaging } from "./firebase";
 import { getToken } from "firebase/messaging";
+
 const socket = io("https://secretx.ru", {
   transports: ["websocket"],
   reconnection: true,
@@ -732,12 +733,6 @@ const sendMessage = () => {
   // отправка
   socket.emit("sendMessage", msg);
 
-  // =====================
-  // LOCAL MESSAGE
-  // =====================
-  setMessages((prev) => [...prev, msg]);
-
-  // =====================
   // UPDATE CHAT LIST
   // =====================
   setChats((prev) => {
