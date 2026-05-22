@@ -113,14 +113,18 @@ app.post("/login", async (req, res) => {
 app.post("/chat/open", async (req, res) => {
   const { userId, otherId } = req.body;
 
-  let chat = await Chat.findOne({
-    users: {
-      $all: [
-        new mongoose.Types.ObjectId(userId),
-        new mongoose.Types.ObjectId(otherId),
-      ],
+  await Chat.updateOne(
+  { users: { $all: [senderId, receiverId] } },
+  {
+    $set: {
+      lastMessage: text,
+      lastMessageTime: new Date(),
     },
-  });
+    $inc: {
+      [`unreadCounts.${receiverId}`]: 1,
+    },
+  }
+);
 
   if (!chat) {
     chat = await Chat.create({
@@ -244,52 +248,69 @@ io.on("connection", (socket) => {
   // =======================
   // SEND MESSAGE
   // =======================
-socket.on("sendMessage", async ({ senderId, receiverId, text, messageId }) => {
+socket.on("sendMessage", async (data, ack) => {
   try {
+    const { senderId, receiverId, text, messageId } = data;
 
+    // 1. защита от дубля
+    const exists = await Message.findOne({ messageId });
+    if (exists) {
+      return ack?.({ ok: true, duplicated: true });
+    }
+
+    // 2. сохранить сообщение
     const msg = await Message.create({
       senderId,
       receiverId,
       text,
       messageId,
       status: "sent",
+      read: false,
+      createdAt: new Date(),
     });
 
-    let chat = await Chat.findOne({
-      users: { $all: [senderId, receiverId] },
-    });
+    // 3. обновить чат
+    await Chat.updateOne(
+      { users: { $all: [senderId, receiverId] } },
+      {
+        $set: {
+          lastMessage: text,
+          lastMessageTime: new Date(),
+        },
+        $inc: {
+          [`unreadCounts.${receiverId}`]: 1,
+        },
+      }
+    );
 
-    if (chat) {
-      chat.lastMessage = text;
-      chat.lastMessageTime = new Date();
-      chat.unreadCounts.set(receiverId, (chat.unreadCounts?.get(receiverId) || 0) + 1);
-      await chat.save();
-    }
+    // 4. получаем юзера (минимально)
+    const sender = await User.findById(senderId).lean();
 
-    const [sender, receiver] = await Promise.all([
-      User.findById(senderId),
-      User.findById(receiverId),
-    ]);
-
-    const fullMessage = {
-      ...msg._doc,
+    const payload = {
+      _id: msg._id,
+      messageId,
+      text,
       senderId: {
         _id: sender._id,
         username: sender.username,
         avatar: sender.avatar,
       },
-      receiverId: {
-        _id: receiver._id,
-        username: receiver.username,
-        avatar: receiver.avatar,
-      },
+      receiverId,
+      createdAt: msg.createdAt,
+      status: "sent",
     };
 
+    // 5. отправка получателю
     const receiverSocket = getSocketId(receiverId);
 
     if (receiverSocket) {
       io.to(receiverSocket).emit("getMessage", fullMessage);
     }
+
+    io.to(socket.id).emit("getMessage", fullMessage);
+
+    // 6. ACK отправителю
+    ack?.({ ok: true, message: payload });
 
   } catch (err) {
     console.log("SEND MESSAGE ERROR:", err);
