@@ -1,0 +1,18 @@
+importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js");
+
+firebase.initializeApp({
+  apiKey: "AIzaSyD6wSemwdq2bOI0XxKt2VqHzlEUgimt6Tg",
+  authDomain: "gochat-41c3d.firebaseapp.com",
+  projectId: "gochat-41c3d",
+  messagingSenderId: "gochat-41c3d.firebasestorage.app",
+  appId: "1:534494373412:web:3c7fec493d324448151ab1",
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage((payload) => {
+  self.registration.showNotification(payload.notification.title, {
+    body: payload.notification.body,
+  });
+});

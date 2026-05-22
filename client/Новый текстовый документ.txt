@@ -1,0 +1,12 @@
+import { initializeApp } from "firebase/app";
+import { getMessaging, getToken } from "firebase/messaging";
+
+const firebaseConfig = {
+  apiKey: "...",
+  projectId: "...",
+  messagingSenderId: "...",
+  appId: "...",
+};
+
+const app = initializeApp(firebaseConfig);
+export const messaging = getMessaging(app);
