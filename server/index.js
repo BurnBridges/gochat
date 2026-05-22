@@ -244,15 +244,10 @@ io.on("connection", (socket) => {
   // =======================
   // SEND MESSAGE
   // =======================
-socket.on("sendMessage", async ({
-  senderId,
-  receiverId,
-  text,
-  messageId,
-}) => {
+socket.on("sendMessage", async ({ senderId, receiverId, text, messageId }) => {
   try {
 
-    const msg = new Message({
+    const msg = await Message.create({
       senderId,
       receiverId,
       text,
@@ -260,92 +255,46 @@ socket.on("sendMessage", async ({
       status: "sent",
     });
 
-    const saved = await msg.save()
+    let chat = await Chat.findOne({
+      users: { $all: [senderId, receiverId] },
+    });
 
-      // CHAT UPDATE
-      let chat = await Chat.findOne({
-        users: { $all: [senderId, receiverId] },
-      });
-
-      if (!chat) {
-        chat = await Chat.create({
-          users: [senderId, receiverId],
-          lastMessage: text,
-          lastMessageTime: new Date(),
-          unreadCounts: { [receiverId]: 1 },
-        });
-      } else {
-        const currentUnread =
-          chat.unreadCounts?.[receiverId] || 0
-
-        chat.lastMessage = text;
-        chat.lastMessageTime = new Date();
-        chat.unreadCounts.set(receiverId, currentUnread + 1);
-
-        await chat.save();
-      }
-
-      // POPULATE USERS
-      const sender = await User.findById(senderId);
-      const receiver = await User.findById(receiverId);
-
-      const fullMessage = {
-        ...saved._doc,
-        senderId: {
-          _id: sender._id,
-          username: sender.username,
-          avatar: sender.avatar,
-        },
-        receiverId: {
-          _id: receiver._id,
-          username: receiver.username,
-          avatar: receiver.avatar,
-        },
-      };
-
-      const receiverSocket = getSocketId(receiverId);
-
-// =====================
-// =====================
-
-// получателю
-if (receiverSocket) {
-
-  io.to(receiverSocket).emit("getMessage", {
-    ...fullMessage,
-    status: "sent",
-  });
-
-}
-
-io.to(socket.id).emit("getMessage", {
-  ...fullMessage,
-  status: "sent",
-});
-
-
-      // =====================
-      // PUSH
-      // =====================
-
-      if (!receiverSocket) {
-        const pushData = await PushToken.findOne({ userId: receiverId });
-
-        if (pushData?.token) {
-          await admin.messaging().send({
-            token: pushData.token,
-            data: {
-              title: sender.username,
-              body: `${sender.username}: ${text}`,
-            },
-          });
-        }
-      }
-
-    } catch (err) {
-      console.log("SEND MESSAGE ERROR:", err);
+    if (chat) {
+      chat.lastMessage = text;
+      chat.lastMessageTime = new Date();
+      chat.unreadCounts.set(receiverId, (chat.unreadCounts?.get(receiverId) || 0) + 1);
+      await chat.save();
     }
-  });
+
+    const [sender, receiver] = await Promise.all([
+      User.findById(senderId),
+      User.findById(receiverId),
+    ]);
+
+    const fullMessage = {
+      ...msg._doc,
+      senderId: {
+        _id: sender._id,
+        username: sender.username,
+        avatar: sender.avatar,
+      },
+      receiverId: {
+        _id: receiver._id,
+        username: receiver.username,
+        avatar: receiver.avatar,
+      },
+    };
+
+    const receiverSocket = getSocketId(receiverId);
+
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("getMessage", fullMessage);
+    }
+
+  } catch (err) {
+    console.log("SEND MESSAGE ERROR:", err);
+  }
+});
 
   // =======================
   // DISCONNECT
