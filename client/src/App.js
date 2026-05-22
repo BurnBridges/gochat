@@ -668,7 +668,7 @@ const sendMessage = () => {
   if (!text.trim()) return;
   const msg = {
     senderId: userId,
-    receiverId,
+    chatId: currentChat,
     text,
     messageId: Date.now(),
     createdAt: Date.now(),

@@ -111,34 +111,28 @@ app.post("/login", async (req, res) => {
 });
 // =======================
 app.post("/chat/open", async (req, res) => {
-  const { userId, otherId } = req.body;
+  try {
+    const { userId, otherId } = req.body;
 
-  await Chat.updateOne(
-  { users: { $all: [senderId, receiverId] } },
-  {
-    $set: {
-      lastMessage: text,
-      lastMessageTime: new Date(),
-    },
-    $inc: {
-      [`unreadCounts.${receiverId}`]: 1,
-    },
+    const chatId = createChatId(userId, otherId);
+
+    let chat = await Chat.findOne({ chatId });
+
+    if (!chat) {
+      chat = await Chat.create({
+        chatId,
+        users: [userId, otherId],
+        lastMessage: "",
+        lastMessageTime: new Date(),
+        unreadCounts: {},
+      });
+    }
+
+    res.json(chat);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "chat open failed" });
   }
-);
-
-  if (!chat) {
-    chat = await Chat.create({
-      users: [
-        new mongoose.Types.ObjectId(userId),
-        new mongoose.Types.ObjectId(otherId),
-      ],
-      lastMessage: "",
-      lastMessageTime: new Date(),
-      unreadCounts: {},
-    });
-  }
-
-  res.json(chat);
 });
 // =======================
 app.post("/update-profile", async (req, res) => {
@@ -185,7 +179,7 @@ app.post("/push/register", async (req, res) => {
 // =======================
 // MESSAGES API
 // =======================
-app.get("/messages/:u1/:u2", async (req, res) => {
+app.get("/messages/:chatId", async (req, res) => {
   const { u1, u2 } = req.params;
 
   const messages = await Message.find({
@@ -255,72 +249,44 @@ io.on("connection", (socket) => {
   // =======================
   // SEND MESSAGE
   // =======================
-socket.on("sendMessage", async (data, ack) => {
+socket.on("sendMessage", async ({ senderId, receiverId, text, messageId }) => {
   try {
-    const { senderId, receiverId, text, messageId } = data;
+    const chatId = createChatId(senderId, receiverId);
 
-    // 1. защита от дубля
-    const exists = await Message.findOne({ messageId });
-    if (exists) {
-      return ack?.({ ok: true, duplicated: true });
-    }
-
-    // 2. сохранить сообщение
     const msg = await Message.create({
       senderId,
       receiverId,
+      chatId,
       text,
       messageId,
       status: "sent",
-      read: false,
       createdAt: new Date(),
     });
 
-    // 3. обновить чат
-    await Chat.updateOne(
-      { users: { $all: [senderId, receiverId] } },
-      {
-        $set: {
-          lastMessage: text,
-          lastMessageTime: new Date(),
-        },
-        $inc: {
-          [`unreadCounts.${receiverId}`]: 1,
-        },
-      }
-    );
+    let chat = await Chat.findOne({ chatId });
 
-    // 4. получаем юзера (минимально)
-    const sender = await User.findById(senderId).lean();
+    if (chat) {
+      chat.lastMessage = text;
+      chat.lastMessageTime = new Date();
 
-    const payload = {
-      _id: msg._id,
-      messageId,
-      text,
-      senderId: {
-        _id: sender._id,
-        username: sender.username,
-        avatar: sender.avatar,
-      },
-      receiverId,
-      createdAt: msg.createdAt,
-      status: "sent",
-    };
+      chat.unreadCounts.set(
+        receiverId,
+        (chat.unreadCounts?.get(receiverId) || 0) + 1
+      );
 
-    // 5. отправка получателю
+      await chat.save();
+    }
+
     const receiverSocket = getSocketId(receiverId);
 
     if (receiverSocket) {
-      io.to(receiverSocket).emit("getMessage", fullMessage);
+      io.to(receiverSocket).emit("getMessage", msg);
     }
 
-    io.to(socket.id).emit("getMessage", fullMessage);
-
-    // 6. ACK отправителю
-    ack?.({ ok: true, message: payload });
+    io.to(socket.id).emit("getMessage", msg);
 
   } catch (err) {
-    console.log("SEND MESSAGE ERROR:", err);
+    console.log("SEND ERROR:", err);
   }
 });
 
@@ -404,13 +370,8 @@ app.post("/chat/open", async (req, res) => {
   const { userId, otherId } = req.body;
 
   let chat = await Chat.findOne({
-    users: {
-      $all: [
-        new mongoose.Types.ObjectId(userId),
-        new mongoose.Types.ObjectId(otherId),
-      ],
-    },
-  });
+  users: { $all: [u1, u2] },
+});
 
   if (!chat) {
     chat = await Chat.create({
