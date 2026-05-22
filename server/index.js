@@ -190,11 +190,18 @@ app.get("/messages/:u1/:u2", async (req, res) => {
 
   const messages = await Message.find({
     $or: [
-      { senderId: u1, receiverId: u2 },
-      { senderId: u2, receiverId: u1 },
+      {
+        senderId: new mongoose.Types.ObjectId(u1),
+        receiverId: new mongoose.Types.ObjectId(u2),
+      },
+      {
+        senderId: new mongoose.Types.ObjectId(u2),
+        receiverId: new mongoose.Types.ObjectId(u1),
+      },
     ],
-  })  .sort({ createdAt: 1 })
-  .populate("senderId receiverId", "username avatar");
+  })
+    .sort({ createdAt: 1 })
+    .populate("senderId receiverId", "username avatar");
 
   res.json(messages);
 });
