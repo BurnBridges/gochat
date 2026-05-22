@@ -448,28 +448,32 @@ const markAsRead = async (senderId, receiverId) => {
     }),
   });
 };
-const openChat = async (user) => {
-  setReceiverId(user._id);
-  setCurrentChatUser(user);
+app.post("/chat/open", async (req, res) => {
+  try {
+    const { userId, otherId } = req.body;
 
-  await markAsRead(user._id, userId);
+    const u1 = mongoose.Types.ObjectId(userId);
+    const u2 = mongoose.Types.ObjectId(otherId);
 
-  await fetch(`${API}/chat/open`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId,
-      otherId: user._id,
-    }),
-  });
+    let chat = await Chat.findOne({
+      users: { $all: [u1, u2] },
+    }).lean();
 
-  const res = await fetch(`${API}/messages/${userId}/${user._id}`);
-  const data = await res.json();
+    if (!chat) {
+      chat = await Chat.create({
+        users: [u1, u2],
+        lastMessage: "",
+        lastMessageTime: new Date(),
+        unreadCounts: {},
+      });
+    }
 
-  console.log("CHAT MESSAGES:", data);
-
-  setMessages(data);
-};
+    res.json(chat);
+  } catch (err) {
+    console.log("CHAT OPEN ERROR:", err);
+    res.status(500).json({ error: "chat open failed" });
+  }
+});
 // =====================
 const toggleChatSelect = (chatId) => {
   setSelectedChats((prev) =>

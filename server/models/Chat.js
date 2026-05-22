@@ -1,11 +1,10 @@
-const mongoose = require("mongoose");
-
 const chatSchema = new mongoose.Schema(
   {
     users: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
+        index: true,
       },
     ],
 
@@ -30,9 +29,5 @@ const chatSchema = new mongoose.Schema(
   }
 );
 
-chatSchema.index({ users: 1 });
-
-module.exports = mongoose.model(
-  "Chat",
-  chatSchema
-);
+// 🔥 ВАЖНО: индекс для быстрых чатов
+chatSchema.index({ users: 1, lastMessageTime: -1 });
