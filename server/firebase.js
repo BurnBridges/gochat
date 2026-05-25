@@ -1,8 +1,16 @@
-const admin = require("firebase-admin");
-const serviceAccount = require("./serviceAccount.json");
+let admin = null;
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+try {
+  const firebaseAdmin = require("firebase-admin");
+  const serviceAccount = require("./serviceAccount.json");
+
+  firebaseAdmin.initializeApp({
+    credential: firebaseAdmin.credential.cert(serviceAccount),
+  });
+
+  admin = firebaseAdmin;
+} catch (err) {
+  console.log("⚠️ Firebase disabled:", err.message);
+}
 
 module.exports = admin;
