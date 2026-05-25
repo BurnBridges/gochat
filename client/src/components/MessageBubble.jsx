@@ -21,4 +21,4 @@ export default function MessageBubble({ m, userId }) {
       </div>
     </div>
   );
-}
+}ы

@@ -3,7 +3,6 @@ require("dotenv").config();
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const path = require("path");
-const admin = require("./firebase");
 const PushToken = require("./models/PushToken");
 const connectDB = require("./db");
 const Message = require("./models/Message");
