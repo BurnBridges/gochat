@@ -1164,51 +1164,6 @@ return (
   </div>
 )}
   {/* ================= BOTTOM NAV ================= */}
- {!isChatOpen && (
-  <div className="bottomNavWrap">
-      <div className="bottomNav">
-        <button
-  className={`navItem ${
-    activeTab === "chats"
-      ? "active"
-      : ""
-  }`}
-  onClick={() =>
-    setActiveTab("chats")
-  }
->
-  <img
-    src="/icons/chat.png"
-    className="navImg"
-  />
-  <div className="navLabel">
-  <span>Chats</span>
-  {unreadCount > 0 && (
-    <div className="navBadge">
-      {unreadCount}
-    </div>
-  )}
-  </div>
-  </button>
-  <button
-    className={`navItem ${
-      activeTab === "profile"
-        ? "active"
-        : ""
-    }`}
-    onClick={() =>
-      setActiveTab("profile")
-    }
-  >
-    <img
-      src="/icons/profile.png"
-      className="navImg"
-    />
-    <span>Profile</span>
-  </button>
-      </div>
-    </div>
-  )}
 </div>
 );
 }
