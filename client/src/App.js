@@ -5,108 +5,59 @@ import { messaging } from "./firebase";
 import { getToken } from "firebase/messaging";
 import { v4 as uuidv4 } from "uuid";
 
-const socket = io("https://secretx.ru", {
+const API = "https://secretx.ru";
+
+const socket = io(API, {
   transports: ["websocket"],
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
 });
 
-const API = "https://secretx.ru";
-
 function App() {
   // ================= STATE =================
-  const [activeTab, setActiveTab] = useState("chats");
-  const [onlineUsers, setOnlineUsers] = useState(new Set());
-  const [profileUser, setProfileUser] = useState(null);
-  const [unreadMessages, setUnreadMessages] = useState({});
-  const [editMode, setEditMode] = useState(false);
-  const [selectedChats, setSelectedChats] = useState([]);
-
-  const [userId, setUserId] = useState(null);
-  const [avatar, setAvatar] = useState(null);
   const [isAuth, setIsAuth] = useState(false);
-
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(true);
 
-  const [search, setSearch] = useState("");
-  const [foundUsers, setFoundUsers] = useState([]);
+  const [userId, setUserId] = useState(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [avatar, setAvatar] = useState(null);
+
+  const [activeTab, setActiveTab] = useState("chats");
+
   const [chats, setChats] = useState([]);
+  const [messages, setMessages] = useState([]);
 
   const [currentChat, setCurrentChat] = useState(null);
-  const [receiverId, setReceiverId] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
   const [currentChatUser, setCurrentChatUser] = useState(null);
+  const [receiverId, setReceiverId] = useState("");
+
+  const [text, setText] = useState("");
+
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [foundUsers, setFoundUsers] = useState([]);
+
+  const [profileUser, setProfileUser] = useState(null);
 
   // ================= REFS =================
-  const receiverIdRef = useRef("");
-  const userIdRef = useRef("");
+  const userIdRef = useRef(null);
+  const receiverIdRef = useRef(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-
-  useEffect(() => {
-    receiverIdRef.current = receiverId;
-  }, [receiverId]);
 
   useEffect(() => {
     userIdRef.current = userId;
   }, [userId]);
 
-  // ================= OPEN CHAT (FIXED) =================
-  const openChat = async (user) => {
-    setReceiverId(user._id);
-    setCurrentChatUser(user);
-
-    const chatRes = await fetch(API + "/chat/open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        otherId: user._id,
-      }),
-    });
-
-    const chat = await chatRes.json();
-
-    setCurrentChat(chat._id);
-
-    const res = await fetch(API + "/messages/" + chat._id);
-    const data = await res.json();
-
-    setMessages(data);
-  };
-
-  const backToHome = () => {
-    setCurrentChat(null);
-    setCurrentChatUser(null);
-    setProfileUser(null);
-    setReceiverId("");
-    setMessages([]);
-    setActiveTab("chats");
-  };
-
-  const openProfile = (user) => {
-    if (!user) return;
-
-    setProfileUser({
-      _id: user._id,
-      username: user.username || "User",
-      avatar: user.avatar || null,
-    });
-
-    setActiveTab("profile");
-  };
-
-  const isOnline = (id) => onlineUsers.has(id);
+  useEffect(() => {
+    receiverIdRef.current = receiverId;
+  }, [receiverId]);
 
   // ================= SOCKET =================
   useEffect(() => {
-    socket.on("onlineUsers", (users) => {
-      setOnlineUsers(new Set(users));
-    });
+    socket.on("onlineUsers", setOnlineUsers);
 
     socket.on("getMessage", (msg) => {
       const sender = msg.senderId?._id || msg.senderId;
@@ -122,10 +73,10 @@ function App() {
         setMessages((prev) => [...prev, msg]);
       }
 
-      setChats((prev) => {
-        const updated = prev.map((c) => {
+      setChats((prev) =>
+        prev.map((c) => {
           const other =
-            (c.senderId?._id || c.senderId) === userId
+            (c.senderId?._id || c.senderId) === userIdRef.current
               ? c.receiverId
               : c.senderId;
 
@@ -140,10 +91,8 @@ function App() {
           }
 
           return c;
-        });
-
-        return updated;
-      });
+        })
+      );
     });
 
     return () => {
@@ -177,6 +126,30 @@ function App() {
     }
   };
 
+  // ================= OPEN CHAT =================
+  const openChat = async (user) => {
+    setReceiverId(user._id);
+    setCurrentChatUser(user);
+
+    const res = await fetch(API + "/chat/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId,
+        otherId: user._id,
+      }),
+    });
+
+    const chat = await res.json();
+
+    setCurrentChat(chat._id);
+
+    const msgRes = await fetch(API + "/messages/" + chat._id);
+    const data = await msgRes.json();
+
+    setMessages(data);
+  };
+
   // ================= SEND =================
   const sendMessage = () => {
     if (!text.trim()) return;
@@ -195,13 +168,40 @@ function App() {
     setText("");
   };
 
+  // ================= PROFILE =================
+  const openProfile = (user) => {
+    if (!user) return;
+
+    setProfileUser(user);
+    setActiveTab("profile");
+  };
+
+  const isOnline = (id) => onlineUsers.has(id);
+
   // ================= UI =================
   if (!isAuth) {
     return (
       <div className="authPage">
-        <input value={username} onChange={(e) => setUsername(e.target.value)} />
-        <input value={password} onChange={(e) => setPassword(e.target.value)} />
-        <button onClick={auth}>{isLogin ? "Login" : "Register"}</button>
+        <div className="authCard">
+          <input
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <input
+            placeholder="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button onClick={auth}>
+            {isLogin ? "Login" : "Register"}
+          </button>
+
+          <p onClick={() => setIsLogin(!isLogin)}>
+            {isLogin ? "Create account" : "Login"}
+          </p>
+        </div>
       </div>
     );
   }
@@ -211,10 +211,13 @@ function App() {
   return (
     <div className="appContainer">
 
+      {/* CHAT */}
       {isChatOpen && (
         <div className="chatPage">
           <div className="chatTop">
-            <button onClick={backToHome}>‹</button>
+            <button onClick={() => setCurrentChatUser(null)}>
+              ‹
+            </button>
             <div>{currentChatUser?.username}</div>
           </div>
 
@@ -226,12 +229,16 @@ function App() {
           </div>
 
           <div className="chatBottom">
-            <input value={text} onChange={(e) => setText(e.target.value)} />
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
             <button onClick={sendMessage}>Send</button>
           </div>
         </div>
       )}
 
+      {/* HOME */}
       {!isChatOpen && (
         <div className="homePage">
           <h2>Chats</h2>
@@ -241,4 +248,4 @@ function App() {
   );
 }
 
-export default App;
+export default App;ы
