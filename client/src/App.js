@@ -3,6 +3,7 @@ import "./App.css";
 import io from "socket.io-client";
 import { messaging } from "./firebase";
 import { getToken } from "firebase/messaging";
+import { v4 as uuidv4 } from "uuid";
 
 const socket = io("https://secretx.ru", {
   transports: ["websocket"],
@@ -17,33 +18,11 @@ const API = "https://secretx.ru";
 function App() {
 const [activeTab, setActiveTab] = useState("chats");
   const [onlineUsers, setOnlineUsers] = useState(new Set());
-  const [avatarFull, setAvatarFull] = useState(false);
   const [profileUser, setProfileUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState({});
   const [editMode, setEditMode] = useState(false);
   const [selectedChats, setSelectedChats] = useState([]);
-  const totalUnread = (obj) =>
-  Object.values(obj).reduce((a, b) => a + b, 0);
-  const goTo = (page) => {
-
-if (page === "chats") {
-  setCurrentChat(null);
-  setCurrentChatUser(null);
-  setProfileUser(null);
-  setReceiverId("");
-  setMessages([]);
-  setActiveTab("chats");
-}
-
-  if (page === "profile") {
-    setActiveTab("profile");
-  }
-if (page === "chat") {
-  setActiveTab("chats");
-  return;
-}
-};
 
 const backToHome = () => {
   setCurrentChat(null);
@@ -53,10 +32,7 @@ const backToHome = () => {
   setMessages([]);
   setActiveTab("chats");
 };
-const backToChat = () => {
-  setProfileUser(null);
-  setActiveTab("chats");
-};
+
 const openProfile = (user) => {
   if (!user) return;
 
@@ -437,6 +413,37 @@ setUnreadMessages(formatted);
 }, [search, userId]);
   // =====================
   // OPEN CHAT
+
+  const openChat = async (user) => {
+
+  setReceiverId(user._id);
+  setCurrentChatUser(user);
+
+  const chatRes = await fetch(API + "/chat/open", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      userId,
+      otherId: user._id,
+    }),
+  });
+
+  const chat = await chatRes.json();
+
+  setCurrentChat(chat._id);
+
+  const res = await fetch(
+    API + "/messages/" + chat._id
+  );
+
+  const data = await res.json();
+
+  setMessages(data);
+
+  await markAsRead(user._id, userId);
+};
   // =====================
 const markAsRead = async (senderId, receiverId) => {
   await fetch(API + "/messages/read", {
@@ -448,32 +455,7 @@ const markAsRead = async (senderId, receiverId) => {
     }),
   });
 };
-app.post("/chat/open", async (req, res) => {
-  try {
-    const { userId, otherId } = req.body;
 
-    const u1 = mongoose.Types.ObjectId(userId);
-    const u2 = mongoose.Types.ObjectId(otherId);
-
-    let chat = await Chat.findOne({
-      users: { $all: [u1, u2] },
-    }).lean();
-
-    if (!chat) {
-      chat = await Chat.create({
-        users: [u1, u2],
-        lastMessage: "",
-        lastMessageTime: new Date(),
-        unreadCounts: {},
-      });
-    }
-
-    res.json(chat);
-  } catch (err) {
-    console.log("CHAT OPEN ERROR:", err);
-    res.status(500).json({ error: "chat open failed" });
-  }
-});
 // =====================
 const toggleChatSelect = (chatId) => {
   setSelectedChats((prev) =>
@@ -623,8 +605,8 @@ if (
         return {
           ...chat,
 
-          text: msg.text,
-          updatedAt: Date.now(),
+        lastMessage: msg.text,
+        lastMessageTime: Date.now(),
 
           // 🔥 важно сохранить статус
           status: msg.status || "sent",
@@ -649,7 +631,7 @@ if (
 
     updated.sort(
       (a, b) =>
-        (b.updatedAt || 0) - (a.updatedAt || 0)
+        (b.lastMessageTime || 0) - (a.lastMessageTime || 0)
     );
 
     return updated;
@@ -668,9 +650,10 @@ const sendMessage = () => {
   if (!text.trim()) return;
   const msg = {
     senderId: userId,
+    receiverId,
     chatId: currentChat,
     text,
-    messageId: Date.now(),
+    messageId: uuidv4(),
     createdAt: Date.now(),
     updatedAt: Date.now(),
     status: "sent",
@@ -1153,8 +1136,8 @@ return (
     </div>
 
     <div className="chatTime">
-      {chat.updatedAt
-        ? new Date(chat.updatedAt).toLocaleTimeString([], {
+      {chat.lastMessageTime
+        ? new Date(chat.lastMessageTime).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           })
@@ -1163,7 +1146,7 @@ return (
   </div>
   <div className="chatPreview">
     <span className="previewText">
-      {chat.text}
+      {chat.lastMessage}
     </span>
     {unreadMessages?.[otherUser._id] > 0 && (
       <div className="chatUnreadBadge">
