@@ -11,11 +11,7 @@ const Chat = require("./models/Chat");
 const onlineUsers = new Map();
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const createChatId = (u1, u2) => {
-  return [u1.toString(), u2.toString()]
-    .sort()
-    .join("_");
-};
+
 
 // =======================
 // APP INIT
@@ -454,6 +450,9 @@ await Chat.updateOne(
   }
 });
 // =======================
+function createChatId(a, b) {
+  return [a, b].sort().join("_");
+}
 // STATIC (ПОСЛЕ ВСЕХ API)
 // =======================
 app.post("/upload-avatar", upload.single("avatar"), async (req, res) => {
