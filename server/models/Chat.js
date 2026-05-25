@@ -2,12 +2,6 @@ const mongoose = require("mongoose");
 
 const chatSchema = new mongoose.Schema(
   {
-    chatId: {
-      type: String,
-      unique: true,
-      index: true,
-    },
-
     users: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -23,7 +17,6 @@ const chatSchema = new mongoose.Schema(
     lastMessageTime: {
       type: Date,
       default: Date.now,
-      index: true,
     },
 
     unreadCounts: {
@@ -32,9 +25,12 @@ const chatSchema = new mongoose.Schema(
       default: {},
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-chatSchema.index({ users: 1, lastMessageTime: -1 });
+chatSchema.index({ users: 1 });
+chatSchema.index({ lastMessageTime: -1 });
 
 module.exports = mongoose.model("Chat", chatSchema);

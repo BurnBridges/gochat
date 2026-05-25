@@ -11,6 +11,12 @@ const Chat = require("./models/Chat");
 const onlineUsers = new Map();
 const JWT_SECRET = process.env.JWT_SECRET;
 
+const createChatId = (u1, u2) => {
+  return [u1.toString(), u2.toString()]
+    .sort()
+    .join("_");
+};
+
 // =======================
 // APP INIT
 // =======================
@@ -110,31 +116,6 @@ app.post("/login", async (req, res) => {
 });
 });
 // =======================
-app.post("/chat/open", async (req, res) => {
-  try {
-    const { userId, otherId } = req.body;
-
-    const chatId = createChatId(userId, otherId);
-
-    let chat = await Chat.findOne({ chatId });
-
-    if (!chat) {
-      chat = await Chat.create({
-        chatId,
-        users: [userId, otherId],
-        lastMessage: "",
-        lastMessageTime: new Date(),
-        unreadCounts: {},
-      });
-    }
-
-    res.json(chat);
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ error: "chat open failed" });
-  }
-});
-// =======================
 app.post("/update-profile", async (req, res) => {
   const { userId, about } = req.body;
 
@@ -180,26 +161,22 @@ app.post("/push/register", async (req, res) => {
 // MESSAGES API
 // =======================
 app.get("/messages/:chatId", async (req, res) => {
-  const { u1, u2 } = req.params;
+  try {
 
-  const messages = await Message.find({
-    $or: [
-      {
-        senderId: new mongoose.Types.ObjectId(u1),
-        receiverId: new mongoose.Types.ObjectId(u2),
-      },
-      {
-        senderId: new mongoose.Types.ObjectId(u2),
-        receiverId: new mongoose.Types.ObjectId(u1),
-      },
-    ],
-  })
-    .sort({ createdAt: 1 })
-    .populate("senderId receiverId", "username avatar");
+    const messages = await Message.find({
+      chatId: req.params.chatId,
+    }).sort({ createdAt: 1 });
 
-  res.json(messages);
+    res.json(messages);
+
+  } catch (err) {
+
+    console.log(err);
+
+    res.status(500).json([]);
+
+  }
 });
-
 app.get("/unread/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -249,44 +226,81 @@ io.on("connection", (socket) => {
   // =======================
   // SEND MESSAGE
   // =======================
-socket.on("sendMessage", async ({ senderId, receiverId, text, messageId }) => {
+socket.on("sendMessage", async (data) => {
   try {
-    const chatId = createChatId(senderId, receiverId);
+
+    // =======================
+    // FIND CHAT
+    // =======================
+
+    const chat = await Chat.findById(
+      data.chatId
+    );
+
+    if (!chat) {
+      console.log("CHAT NOT FOUND");
+      return;
+    }
+
+    // =======================
+    // CREATE MESSAGE
+    // =======================
 
     const msg = await Message.create({
-      senderId,
-      receiverId,
-      chatId,
-      text,
-      messageId,
+      chatId: chat.chatId,
+      senderId: data.senderId,
+      receiverId: data.receiverId,
+      text: data.text,
+      messageId: data.messageId,
       status: "sent",
-      createdAt: new Date(),
     });
 
-    let chat = await Chat.findOne({ chatId });
+    // =======================
+    // UPDATE CHAT
+    // =======================
 
-    if (chat) {
-      chat.lastMessage = text;
-      chat.lastMessageTime = new Date();
+    chat.lastMessage = data.text;
+    chat.lastMessageTime = new Date();
 
-      chat.unreadCounts.set(
-        receiverId,
-        (chat.unreadCounts?.get(receiverId) || 0) + 1
-      );
+    chat.unreadCounts.set(
+      data.receiverId,
+      (
+        chat.unreadCounts?.get(
+          data.receiverId
+        ) || 0
+      ) + 1
+    );
 
-      await chat.save();
-    }
+    await chat.save();
 
-    const receiverSocket = getSocketId(receiverId);
+    // =======================
+    // SEND TO RECEIVER
+    // =======================
+
+    const receiverSocket =
+      getSocketId(data.receiverId);
 
     if (receiverSocket) {
-      io.to(receiverSocket).emit("getMessage", msg);
+      io.to(receiverSocket).emit(
+        "getMessage",
+        msg
+      );
     }
 
-    io.to(socket.id).emit("getMessage", msg);
+    // =======================
+    // SEND TO SENDER
+    // =======================
+
+    io.to(socket.id).emit(
+      "getMessage",
+      msg
+    );
 
   } catch (err) {
-    console.log("SEND ERROR:", err);
+    console.log(
+      "SEND ERROR:",
+      err
+    );
   }
 });
 
@@ -361,31 +375,37 @@ app.get("/chats/:userId", async (req, res) => {
   } catch (err) {
     console.log("CHATS ERROR:", err);
     console.log("GET CHATS FOR:", userId);
-    console.log("CHATS RAW:", chats);
     res.status(500).json({ error: "server error" });
   }
 });
 // =======================
 app.post("/chat/open", async (req, res) => {
-  const { userId, otherId } = req.body;
+  try {
+    const { userId, otherId } = req.body;
 
-  let chat = await Chat.findOne({
-  users: { $all: [u1, u2] },
-});
+    const chatId = createChatId(userId, otherId);
 
-  if (!chat) {
-    chat = await Chat.create({
-      users: [
-        new mongoose.Types.ObjectId(userId),
-        new mongoose.Types.ObjectId(otherId),
-      ],
-      lastMessage: "",
-      lastMessageTime: new Date(),
-      unreadCounts: {},
+    let chat = await Chat.findOne({ chatId });
+
+    if (!chat) {
+      chat = await Chat.create({
+        chatId,
+        users: [userId, otherId],
+        lastMessage: "",
+        lastMessageTime: new Date(),
+        unreadCounts: {},
+      });
+    }
+
+    res.json({
+      chatId: chat._id,
+      users: chat.users,
     });
-  }
 
-  res.json(chat);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "chat open failed" });
+  }
 });
 // =======================
 app.post("/messages/read", async (req, res) => {
@@ -405,12 +425,24 @@ app.post("/messages/read", async (req, res) => {
         },
       }
     );
+    const chatId = createChatId(
+  senderId,
+  receiverId
+);
 
+await Chat.updateOne(
+  { chatId },
+  {
+    $set: {
+      [`unreadCounts.${receiverId}`]: 0,
+    },
+  }
+);
     const senderSocket = onlineUsers.get(senderId);
 
     if (senderSocket) {
       io.to(senderSocket).emit("messageRead", {
-        from: senderId,
+        from: receiverId,
       });
     }
 
